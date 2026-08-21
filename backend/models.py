@@ -8,6 +8,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     session_id: str
     reply: str
+    conversation_ended: bool = False
 
 class SiteVisitBooking(BaseModel):
     session_id: str
@@ -27,13 +28,6 @@ class AnalyticsResponse(BaseModel):
     summary: str | None = None
 
 
-class SiteVisitBooking(BaseModel):
-    session_id: str
-    configuration: Literal["2 BHK", "3 BHK"]
-    preferred_date: str      
-    preferred_time: str      
-    contact_number: str
-
 class BookingResponse(BaseModel):
     session_id: str
     status: Literal["confirmed", "failed"]
@@ -47,3 +41,12 @@ class SessionAnalytics(BaseModel):
     budget_mentioned: str | None = None
     site_visit_status: Literal["confirmed", "failed", "not_requested"]
     lead_quality: Literal["hot", "warm", "cold"]
+
+class StartResponse(BaseModel):
+    session_id: str
+    messages: list[str]
+
+class HistoryResponse(BaseModel):
+    session_id: str
+    messages: list[dict]
+    ended: bool

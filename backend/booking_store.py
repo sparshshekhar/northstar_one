@@ -1,13 +1,11 @@
 from typing import Dict
 from models import SiteVisitBooking, BookingResponse
 
-# Simulated fully-booked slots — deterministic, for reproducible test cases
 UNAVAILABLE_SLOTS = {
     ("2026-08-25", "11:00 AM"),
     ("2026-08-26", "05:00 PM"),
 }
 
-# Track bookings per session, so analytics (Step 5) can read the outcome
 _bookings: Dict[str, BookingResponse] = {}
 
 

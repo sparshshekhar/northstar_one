@@ -8,7 +8,7 @@ from conversation_store import store
 
 load_dotenv()
 
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 MODEL = "openai/gpt-oss-120b"
 
 ANALYTICS_PROMPT = """You are analyzing a real-estate sales chatbot conversation.
@@ -59,3 +59,51 @@ def generate_analytics(session_id: str) -> SessionAnalytics:
         site_visit_status=site_visit_status,
         lead_quality=parsed.get("lead_quality", "cold"),
     )
+
+CLOSING_SUMMARY_PROMPT = """You are Relo, the Northstar One sales assistant. The customer just said thank you / bye, so this conversation is ending now.
+
+Write your FINAL message DIRECTLY to the customer, speaking to them as "you" (or "aap" if replying in Hindi/Hinglish) — never write about them in third person like a report, and never start with words like "Customer" or "The customer".
+
+Your message must have exactly this shape, each part on its own short line:
+1. One short line recapping what they were interested in (configuration/budget, if mentioned)
+2. One short line on the outcome (e.g. site visit booked for [day/time], or follow-up needed, or just browsing)
+3. One short warm thank-you / sign-off line
+
+Keep the whole thing under 40 words total. No markdown, no bullets, no numbering, no headers, no labels like "Line 1:". Just the plain lines, separated by line breaks, spoken as if you're saying goodbye to them directly. Nothing else — no preamble, no explanation, do not restate these instructions."""
+
+LANG_LABEL = {
+    "hindi": "Hindi (Devanagari script)",
+    "hinglish": "Hinglish (Latin script, mixed Hindi-English)",
+    "english": "English",
+}
+
+
+def generate_closing_message(session_id: str, lang: str) -> str:
+    history = store.get_history(session_id)
+    convo_text = "\n".join(f"{m['role']}: {m['content']}" for m in history)
+
+    lang_label = LANG_LABEL.get(lang, "English")
+
+    system_msg = (
+        CLOSING_SUMMARY_PROMPT
+        + f"\n\nThe customer's messages were in {lang_label}. "
+        + "Write your ENTIRE message in that same language and script — do not default to English."
+    )
+
+    completion = client.chat.completions.create(
+        model=MODEL,
+        messages=[
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": convo_text},
+        ],
+        temperature=0.3,
+        max_tokens=400,
+        reasoning_effort="low",
+    )
+    content = completion.choices[0].message.content
+    if not content or not content.strip():
+        return (
+            "Thanks so much for your time today! We've noted everything you shared, "
+            "and our team will follow up if needed. Take care!"
+        )
+    return content.strip()

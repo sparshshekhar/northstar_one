@@ -1,26 +1,17 @@
-// ---------- config ----------
-const API_BASE = "http://127.0.0.1:8000"; // change if your backend runs elsewhere
+const API_BASE = "http://127.0.0.1:8000";
 
-// ---------- header scroll state ----------
 const header = document.getElementById("site-header");
 window.addEventListener("scroll", () => {
   header.classList.toggle("scrolled", window.scrollY > 40);
 });
 
-// ---------- session id ----------
 function getSessionId() {
-  let id = sessionStorage.getItem("northstar_session_id");
-  if (!id) {
-    id = crypto.randomUUID
-      ? crypto.randomUUID()
-      : "sess-" + Date.now() + "-" + Math.random().toString(16).slice(2);
-    sessionStorage.setItem("northstar_session_id", id);
-  }
-  return id;
+  return crypto.randomUUID
+    ? crypto.randomUUID()
+    : "sess-" + Date.now() + "-" + Math.random().toString(16).slice(2);
 }
 const SESSION_ID = getSessionId();
 
-// ---------- chat widget elements ----------
 const chatLauncher = document.getElementById("chat-launcher");
 const chatBadge = document.getElementById("chat-badge");
 const chatPanel = document.getElementById("chat-panel");
@@ -63,8 +54,33 @@ function hideTyping() {
   if (el) el.remove();
 }
 
-// Sends a message to the backend. If hideUserBubble is true, the user's
-// message is sent but not rendered — used for the automatic opening greeting.
+async function startConversation() {
+  showTyping();
+  try {
+    const res = await fetch(`${API_BASE}/start/${SESSION_ID}`, {
+      method: "POST",
+    });
+    const data = await res.json();
+    hideTyping();
+    const msgs = data.messages || [];
+    for (let i = 0; i < msgs.length; i++) {
+      if (i > 0) {
+        showTyping();
+        await new Promise((r) => setTimeout(r, 700));
+        hideTyping();
+      }
+      appendMessage(msgs[i], "bot");
+    }
+  } catch (err) {
+    hideTyping();
+    appendMessage(
+      "Couldn't reach the server. Is the backend running on " + API_BASE + "?",
+      "bot",
+    );
+    console.error(err);
+  }
+}
+
 async function sendToBackend(message, { hideUserBubble = false } = {}) {
   if (!hideUserBubble) appendMessage(message, "user");
   showTyping();
@@ -76,13 +92,13 @@ async function sendToBackend(message, { hideUserBubble = false } = {}) {
     });
     const data = await res.json();
     hideTyping();
-    // Adjust this if your /chat response uses a different field name
     const reply =
       (data.reply && data.reply.trim()) ||
       data.response ||
       data.message ||
       "Sorry, something went wrong on my end — could you try that again?";
     appendMessage(reply, "bot");
+    if (data.conversation_ended) endConversationUI();
   } catch (err) {
     hideTyping();
     appendMessage(
@@ -91,6 +107,41 @@ async function sendToBackend(message, { hideUserBubble = false } = {}) {
     );
     console.error(err);
   }
+}
+
+function endConversationUI() {
+  chatInput.disabled = true;
+  chatSend.disabled = true;
+  chatInput.placeholder = "Conversation ended";
+  if (micBtn) micBtn.disabled = true;
+
+  const divider = document.createElement("div");
+  divider.className = "chat-ended-divider";
+  divider.textContent = "Conversation ended";
+  chatLog.appendChild(divider);
+
+  const restartBtn = document.createElement("button");
+  restartBtn.type = "button";
+  restartBtn.className = "chat-restart-btn";
+  restartBtn.textContent = "Start New Conversation";
+  restartBtn.addEventListener("click", restartConversation);
+  chatLog.appendChild(restartBtn);
+  chatLog.scrollTop = chatLog.scrollHeight;
+  setTimeout(closeChat, 2000);
+}
+
+async function restartConversation() {
+  try {
+    await fetch(`${API_BASE}/reset/${SESSION_ID}`, { method: "POST" });
+  } catch (err) {
+    console.error(err);
+  }
+  chatLog.innerHTML = "";
+  chatInput.disabled = false;
+  chatSend.disabled = false;
+  chatInput.placeholder = "Ask about a 2 BHK, pricing, availability…";
+  if (micBtn && recognition) micBtn.disabled = false;
+  startConversation();
 }
 
 chatSend.addEventListener("click", () => {
@@ -103,18 +154,14 @@ chatInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") chatSend.click();
 });
 
-// ---------- auto-start after 5 seconds ----------
 window.addEventListener("load", () => {
   setTimeout(() => {
     openChat();
     chatBadge.classList.add("show");
-    // Kicks off the conversation with a hidden trigger message —
-    // only the bot's reply is shown, so it reads as the bot greeting first.
-    sendToBackend("Hi", { hideUserBubble: true });
+    startConversation();
   }, 5000);
 });
 
-// ---------- booking form ----------
 const bookForm = document.getElementById("book-form");
 const bookResult = document.getElementById("book-result");
 
@@ -146,4 +193,71 @@ bookForm.addEventListener("submit", async (e) => {
       "Couldn't reach the server. Is the backend running on " + API_BASE + "?";
     console.error(err);
   }
+});
+
+const micBtn = document.getElementById("chat-mic");
+const langToggle = document.getElementById("mic-lang-toggle");
+
+const SpeechRecognition =
+  window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+let isListening = false;
+let voiceLang = "en-IN";
+
+if (SpeechRecognition) {
+  recognition = new SpeechRecognition();
+  recognition.continuous = false;
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript;
+    chatInput.value = transcript;
+    chatInput.focus();
+  };
+  recognition.onerror = (event) => {
+    console.error("Speech recognition error:", event.error);
+    stopListeningUI();
+    if (event.error === "not-allowed" || event.error === "permission-denied") {
+      appendMessage(
+        "Mic access was blocked — allow microphone permission in your browser to use voice input.",
+        "bot",
+      );
+    }
+  };
+  recognition.onend = () => stopListeningUI();
+} else if (micBtn) {
+  micBtn.disabled = true;
+  micBtn.title =
+    "Voice input isn't supported in this browser — try Chrome or Edge.";
+}
+
+function startListeningUI() {
+  isListening = true;
+  micBtn.classList.add("listening");
+}
+function stopListeningUI() {
+  isListening = false;
+  if (micBtn) micBtn.classList.remove("listening");
+}
+
+micBtn?.addEventListener("click", () => {
+  if (!recognition) return;
+  if (isListening) {
+    recognition.stop();
+    return;
+  }
+  recognition.lang = voiceLang;
+  startListeningUI();
+  try {
+    recognition.start();
+  } catch (err) {
+    console.error(err);
+    stopListeningUI();
+  }
+});
+
+langToggle?.addEventListener("click", () => {
+  voiceLang = voiceLang === "en-IN" ? "hi-IN" : "en-IN";
+  langToggle.textContent = voiceLang === "en-IN" ? "EN" : "हि";
 });
