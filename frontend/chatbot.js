@@ -1,8 +1,4 @@
-fetch("https://northstar-one-backend.onrender.com/chat", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ message: userMessage }),
-});
+const API_BASE = "https://northstar-one-backend.onrender.com";
 
 const header = document.getElementById("site-header");
 window.addEventListener("scroll", () => {
