@@ -13,14 +13,20 @@ from conversation_store import store
 from prompts import SYSTEM_PROMPT
 from analytics import generate_analytics, generate_closing_message
 from nlp_helpers import detect_language, is_closing_message
+from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
-app = FastAPI(title="Northstar One - AI Sales Agent")
+app = FastAPI()
+
+origins = [
+    "https://northstar-one-eight.vercel.app",
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
